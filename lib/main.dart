@@ -1,149 +1,220 @@
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'dart:async';
+import 'firebase_options.dart';
 
-// Modelos de datos
-class Drink {
+// --- MODELOS ---
+class Product {
   final String name;
   final IconData icon;
-  Drink({required this.name, required this.icon});
-}
-
-class Food {
-  final String name;
-  final IconData icon;
-  Food({required this.name, required this.icon});
+  final double price;
+  final String destination; // 'barra' o 'cocina'
+  Product({
+    required this.name,
+    required this.icon,
+    required this.price,
+    required this.destination,
+  });
 }
 
 class CartItem {
-  final dynamic item;
+  final Product product;
   int quantity;
-  CartItem({required this.item, this.quantity = 1});
+  CartItem({required this.product, this.quantity = 1});
 }
 
-// State Management con Provider
+// --- GESTIÓN DE ESTADO (CARRITO) ---
 class Cart with ChangeNotifier {
   final Map<String, CartItem> _items = {};
-  Map<String, CartItem> get items => _items;
+  int _selectedTable = 1;
 
-  void addItem(dynamic product) {
+  Map<String, CartItem> get items => _items;
+  int get selectedTable => _selectedTable;
+
+  void setTable(int table) {
+    _selectedTable = table;
+    notifyListeners();
+  }
+
+  void addItem(Product product) {
     if (_items.containsKey(product.name)) {
-      _items.update(product.name, (existing) => CartItem(item: existing.item, quantity: existing.quantity + 1));
+      _items.update(
+        product.name,
+        (ex) => CartItem(product: ex.product, quantity: ex.quantity + 1),
+      );
     } else {
-      _items.putIfAbsent(product.name, () => CartItem(item: product));
+      _items.putIfAbsent(product.name, () => CartItem(product: product));
     }
     notifyListeners();
   }
 
-  void removeItem(dynamic product) {
-    if (_items.containsKey(product.name) && _items[product.name]!.quantity > 1) {
-      _items.update(product.name, (existing) => CartItem(item: existing.item, quantity: existing.quantity - 1));
+  void removeItem(Product product) {
+    if (_items.containsKey(product.name) &&
+        _items[product.name]!.quantity > 1) {
+      _items.update(
+        product.name,
+        (ex) => CartItem(product: ex.product, quantity: ex.quantity - 1),
+      );
     } else {
       _items.remove(product.name);
     }
     notifyListeners();
   }
 
+  double get total => _items.values.fold(
+    0,
+    (sum, item) => sum + (item.product.price * item.quantity),
+  );
   void clear() {
     _items.clear();
     notifyListeners();
   }
 }
 
-Future<void> main() async {
+// --- MAIN ---
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  // Habilitar la persistencia de datos de Firestore
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => Cart(),
-      child: const MyApp(),
-    ),
+    ChangeNotifierProvider(create: (context) => Cart(), child: const MyApp()),
   );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Bar App',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        useMaterial3: true,
-      ),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(primarySwatch: Colors.indigo, useMaterial3: true),
       home: const RoleSelectionScreen(),
     );
   }
 }
 
+// --- SELECCIÓN DE ROL ---
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Selecciona tu rol')),
-      body: Center(
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.indigo.shade900, Colors.indigo.shade500],
+          ),
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ElevatedButton.icon(
-              icon: const Icon(Icons.person),
-              label: const Text('Camarero'),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WaiterScreen())),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(200, 60),
-                textStyle: const TextStyle(fontSize: 20),
-              ),
+            const Icon(Icons.restaurant_menu, size: 100, color: Colors.white),
+            const SizedBox(height: 30),
+            _roleButton(
+              context,
+              "CAMARERO",
+              Icons.person,
+              const WaiterScreen(),
             ),
             const SizedBox(height: 20),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.monitor),
-              label: const Text('Cocina/Barra'),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonitorScreen())),
-               style: ElevatedButton.styleFrom(
-                minimumSize: const Size(200, 60),
-                textStyle: const TextStyle(fontSize: 20),
-              ),
+            _roleButton(
+              context,
+              "COCINA",
+              Icons.soup_kitchen,
+              const MonitorScreen(type: 'cocina'),
+            ),
+            const SizedBox(height: 20),
+            _roleButton(
+              context,
+              "BARRA / PAGOS",
+              Icons.local_bar,
+              const BarraCobrosScreen(),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _roleButton(
+    BuildContext context,
+    String text,
+    IconData icon,
+    Widget screen,
+  ) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size(280, 70),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      ),
+      onPressed: () =>
+          Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+      icon: Icon(icon),
+      label: Text(
+        text,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
 }
 
+// --- PANTALLA CAMARERO ---
 class WaiterScreen extends StatefulWidget {
   const WaiterScreen({super.key});
-
   @override
   State<WaiterScreen> createState() => _WaiterScreenState();
 }
 
-class _WaiterScreenState extends State<WaiterScreen> with SingleTickerProviderStateMixin {
+class _WaiterScreenState extends State<WaiterScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
-  final List<Drink> drinks = [
-    Drink(name: 'Cerveza', icon: Icons.local_drink),
-    Drink(name: 'Vino', icon: Icons.wine_bar),
-    Drink(name: 'Coca-Cola', icon: Icons.local_cafe),
+  final List<Product> barraItems = [
+    Product(
+      name: 'Caña',
+      icon: Icons.local_drink,
+      price: 1.50,
+      destination: 'barra',
+    ),
+    Product(
+      name: 'Vino',
+      icon: Icons.wine_bar,
+      price: 2.50,
+      destination: 'barra',
+    ),
+    Product(
+      name: 'Refresco',
+      icon: Icons.liquor,
+      price: 2.00,
+      destination: 'barra',
+    ),
+    Product(
+      name: 'Café',
+      icon: Icons.coffee,
+      price: 1.20,
+      destination: 'barra',
+    ),
   ];
-
-  final List<Food> foods = [
-    Food(name: 'Hamburguesa', icon: Icons.fastfood),
-    Food(name: 'Pizza', icon: Icons.local_pizza),
-    Food(name: 'Ensalada', icon: Icons.spa),
+  final List<Product> cocinaItems = [
+    Product(
+      name: 'Bravas',
+      icon: Icons.restaurant,
+      price: 6.50,
+      destination: 'cocina',
+    ),
+    Product(
+      name: 'Bocadillo',
+      icon: Icons.lunch_dining,
+      price: 5.50,
+      destination: 'cocina',
+    ),
+    Product(
+      name: 'Ensalada',
+      icon: Icons.flatware,
+      price: 7.00,
+      destination: 'cocina',
+    ),
   ];
 
   @override
@@ -154,14 +225,33 @@ class _WaiterScreenState extends State<WaiterScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    final cart = Provider.of<Cart>(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vista Camarero'),
+        title: const Text("Camarero"),
+        actions: [
+          DropdownButton<int>(
+            value: cart.selectedTable,
+            dropdownColor: Colors.indigo,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+            items: List.generate(
+              15,
+              (i) => DropdownMenuItem(
+                value: i + 1,
+                child: Text("Mesa ${i + 1}  "),
+              ),
+            ),
+            onChanged: (v) => cart.setTable(v!),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(icon: Icon(Icons.local_drink), text: 'Bebidas'),
-            Tab(icon: Icon(Icons.restaurant), text: 'Comida'),
+            Tab(text: "BARRA"),
+            Tab(text: "COCINA"),
           ],
         ),
       ),
@@ -170,52 +260,104 @@ class _WaiterScreenState extends State<WaiterScreen> with SingleTickerProviderSt
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: [
-                _buildGrid(drinks),
-                _buildGrid(foods),
-              ],
+              children: [_buildGrid(barraItems), _buildGrid(cocinaItems)],
             ),
           ),
-          const _CartView(),
+          _buildBotonMenuEspecial(context),
+          const _CartSummaryView(),
         ],
       ),
     );
   }
 
-  Widget _buildGrid(List<dynamic> items) {
+  Widget _buildGrid(List<Product> products) {
     return GridView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 1.5,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
+        childAspectRatio: 1.6,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
       ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return item is Drink ? _DrinkCard(drink: item) : _FoodCard(food: item);
-      },
+      itemCount: products.length,
+      itemBuilder: (context, i) => _ProductCard(product: products[i]),
     );
   }
-}
 
-class _DrinkCard extends StatelessWidget {
-  final Drink drink;
-  const _DrinkCard({required this.drink});
+  Widget _buildBotonMenuEspecial(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.purple,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(double.infinity, 50),
+        ),
+        onPressed: () => _showMenuDialog(context),
+        child: const Text(
+          "🔥 AÑADIR MENÚ DEL DÍA (12.00€)",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      child: InkWell(
-        onTap: () => Provider.of<Cart>(context, listen: false).addItem(drink),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(drink.icon, size: 40, color: Colors.blue.shade700),
-            const SizedBox(height: 10),
-            Text(drink.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+  void _showMenuDialog(BuildContext context) {
+    bool cafe = false;
+    bool postre = false;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("Opciones de Menú"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                title: const Text("¿Quiere Postre?"),
+                value: postre,
+                onChanged: (v) => setState(() => postre = v!),
+              ),
+              CheckboxListTile(
+                title: const Text("¿Quiere Café?"),
+                value: cafe,
+                onChanged: (v) => setState(() => cafe = v!),
+              ),
+              if (postre && cafe)
+                const Text(
+                  "⚠️ Se cobrará +1.20€ suplemento",
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                final cart = Provider.of<Cart>(context, listen: false);
+                cart.addItem(
+                  Product(
+                    name: "Menú Completo",
+                    icon: Icons.star,
+                    price: 12.0,
+                    destination: 'cocina',
+                  ),
+                );
+                if (postre && cafe)
+                  cart.addItem(
+                    Product(
+                      name: "Suplemento Café (Menú)",
+                      icon: Icons.coffee,
+                      price: 1.20,
+                      destination: 'barra',
+                    ),
+                  );
+                Navigator.pop(context);
+              },
+              child: const Text("Añadir al Pedido"),
+            ),
           ],
         ),
       ),
@@ -223,22 +365,29 @@ class _DrinkCard extends StatelessWidget {
   }
 }
 
-class _FoodCard extends StatelessWidget {
-  final Food food;
-  const _FoodCard({required this.food});
-
+class _ProductCard extends StatelessWidget {
+  final Product product;
+  const _ProductCard({required this.product});
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 4,
       child: InkWell(
-        onTap: () => Provider.of<Cart>(context, listen: false).addItem(food),
+        onTap: () => Provider.of<Cart>(context, listen: false).addItem(product),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(food.icon, size: 40, color: Colors.orange.shade700),
-            const SizedBox(height: 10),
-            Text(food.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Icon(
+              product.icon,
+              size: 30,
+              color: product.destination == 'barra'
+                  ? Colors.blue
+                  : Colors.orange,
+            ),
+            Text(
+              product.name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text("${product.price.toStringAsFixed(2)}€"),
           ],
         ),
       ),
@@ -246,341 +395,197 @@ class _FoodCard extends StatelessWidget {
   }
 }
 
-class _CartView extends StatelessWidget {
-  const _CartView();
-
+class _CartSummaryView extends StatelessWidget {
+  const _CartSummaryView();
   @override
   Widget build(BuildContext context) {
     final cart = Provider.of<Cart>(context);
-
+    if (cart.items.isEmpty) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.red.withValues(alpha: 0.1),
-            spreadRadius: 1,
-            blurRadius: 5,
-          )
-        ],
-      ),
+      padding: const EdgeInsets.all(15),
+      color: Colors.grey.shade100,
       child: Column(
         children: [
-          const Text("Pedido Actual", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          if (cart.items.isEmpty) const Text("El carrito está vacío"),
-          ...cart.items.values.map((cartItem) => ListTile(
-                leading: Icon(cartItem.item.icon),
-                title: Text(cartItem.item.name),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(icon: const Icon(Icons.remove), onPressed: () => cart.removeItem(cartItem.item)),
-                    Text(cartItem.quantity.toString(), style: const TextStyle(fontSize: 18)),
-                    IconButton(icon: const Icon(Icons.add), onPressed: () => cart.addItem(cartItem.item)),
-                  ],
+          Text(
+            "MESA ${cart.selectedTable} - TOTAL: ${cart.total.toStringAsFixed(2)}€",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 45),
+            ),
+            onPressed: () async {
+              final batch = FirebaseFirestore.instance.batch();
+              for (var item in cart.items.values) {
+                final ref = FirebaseFirestore.instance
+                    .collection('orders')
+                    .doc();
+                batch.set(ref, {
+                  'mesa': cart.selectedTable,
+                  'producto': item.product.name,
+                  'cantidad': item.quantity,
+                  'precio': item.product.price,
+                  'destino': item.product.destination,
+                  'status': 'pending',
+                  'timestamp': FieldValue.serverTimestamp(),
+                });
+              }
+              await batch.commit();
+              cart.clear();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Pedido enviado a Barra y Cocina"),
                 ),
-              )),
-          const SizedBox(height: 10),
-          if (cart.items.isNotEmpty) _SendOrderButton(),
+              );
+            },
+            child: const Text("ENVIAR PEDIDO"),
+          ),
         ],
       ),
     );
   }
 }
 
-class _SendOrderButton extends StatefulWidget {
-  @override
-  __SendOrderButtonState createState() => __SendOrderButtonState();
-}
-
-class __SendOrderButtonState extends State<_SendOrderButton> with SingleTickerProviderStateMixin {
-  bool _isSending = false;
-  bool _isDone = false;
-  late AnimationController _animationController;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
-  }
-  
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  void _sendOrder() {
-    if (_isSending) return;
-
-    final cart = Provider.of<Cart>(context, listen: false);
-    final orderItems = cart.items.values.map((item) => {
-      'name': item.item.name,
-      'quantity': item.quantity,
-      'type': item.item is Drink ? 'drink' : 'food',
-    }).toList();
-
-    // Inmediatamente actualiza la UI a un estado de éxito
-    setState(() {
-      _isSending = true;
-      _isDone = true;
-    });
-    _animationController.forward();
-    
-    // Limpia el carrito localmente
-    cart.clear();
-
-    // Envía los datos a Firebase en segundo plano
-    FirebaseFirestore.instance.collection('orders').add({
-      'items': orderItems,
-      'timestamp': FieldValue.serverTimestamp(),
-      'status': 'pending',
-    // ignore: body_might_complete_normally_catch_error
-    }).catchError((error) {
-      // Opcional: Manejar el error, por ejemplo, mostrando un snackbar
-      // o registrando el error para un reintento posterior.
-      debugPrint("Error al enviar el pedido: $error");
-        });
-    
-    // Resetea el botón después de la animación de éxito
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        _animationController.reverse().then((_) {
-          if (mounted) {
-            setState(() {
-              _isSending = false;
-              _isDone = false;
-            });
-          }
-        });
-      }
-    });
-  }
-
+// --- MONITOR (PARA COCINA) ---
+class MonitorScreen extends StatelessWidget {
+  final String type;
+  const MonitorScreen({super.key, required this.type});
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      icon: _isSending
-          ? ScaleTransition(
-              scale: Tween(begin: 0.0, end: 1.0).animate(_animationController),
-              child: _isDone ? const Icon(Icons.check, color: Colors.white) : const SizedBox.shrink(),
-            )
-          : const Icon(Icons.send),
-      label: Text(_isSending ? (_isDone ? 'Enviado' : 'Enviando...') : 'Enviar Pedido'),
-      onPressed: _sendOrder,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: _isDone ? Colors.green : Theme.of(context).primaryColor,
-        minimumSize: const Size(double.infinity, 50),
-        textStyle: const TextStyle(fontSize: 18),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(type == 'cocina' ? "COCINA" : "BARRA"),
+        backgroundColor: type == 'cocina' ? Colors.orange : Colors.blue,
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('orders')
+            .where('destino', isEqualTo: type)
+            .where('status', isEqualTo: 'pending')
+            .orderBy('timestamp', descending: false)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return const Center(child: CircularProgressIndicator());
+          var docs = snapshot.data!.docs;
+          return ListView.builder(
+            itemCount: docs.length,
+            itemBuilder: (context, i) {
+              var d = docs[i];
+              return Card(
+                margin: const EdgeInsets.all(8),
+                child: ListTile(
+                  leading: CircleAvatar(child: Text("${d['mesa']}")),
+                  title: Text(
+                    "${d['cantidad']}x ${d['producto']}",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(
+                      Icons.check_circle,
+                      size: 35,
+                      color: Colors.green,
+                    ),
+                    onPressed: () =>
+                        d.reference.update({'status': 'completed'}),
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
 
-class MonitorScreen extends StatelessWidget {
-  const MonitorScreen({super.key});
-
+// --- BARRA Y COBROS ---
+class BarraCobrosScreen extends StatelessWidget {
+  const BarraCobrosScreen({super.key});
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Monitor Cocina/Barra'),
+          title: const Text("Monitor Barra y Cobros"),
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.local_drink), text: 'Barra'),
-              Tab(icon: Icon(Icons.restaurant), text: 'Cocina'),
+              Tab(text: "PEDIDOS BEBIDA"),
+              Tab(text: "COBRAR MESA"),
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
           children: [
-            _OrdersTab(type: 'drink'),
-            _OrdersTab(type: 'food'),
+            const MonitorScreen(type: 'barra'),
+            _buildSeccionCobros(),
           ],
         ),
       ),
     );
   }
-}
 
-class _OrdersTab extends StatefulWidget {
-  final String type;
-  const _OrdersTab({required this.type});
-
-  @override
-  __OrdersTabState createState() => __OrdersTabState();
-}
-
-class __OrdersTabState extends State<_OrdersTab> {
-  late final AudioPlayer _audioPlayer;
-
-  @override
-  void initState() {
-    super.initState();
-    _audioPlayer = AudioPlayer();
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  void _playSound() {
-    // El archivo de sonido debe estar en assets/sounds/notification.mp3
-    _audioPlayer.play(AssetSource('sounds/notification.mp3'));
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildSeccionCobros() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('orders')
-          .where('status', isEqualTo: 'pending')
-          .orderBy('timestamp', descending: true)
+          .where('status', isNotEqualTo: 'paid')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const Text('Error al cargar pedidos');
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-
-        final docs = snapshot.data!.docs;
-
-        // Lógica para reproducir sonido solo para nuevos pedidos en la categoría correcta
-        for (var change in snapshot.data!.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final items = change.doc['items'] as List<dynamic>;
-            if (items.any((item) => item['type'] == widget.type)) {
-              _playSound();
-            }
-          }
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
+        Map<int, double> mesaTotales = {};
+        for (var doc in snapshot.data!.docs) {
+          int m = doc['mesa'];
+          double p = (doc['precio'] as num).toDouble();
+          int c = doc['cantidad'];
+          mesaTotales[m] = (mesaTotales[m] ?? 0) + (p * c);
         }
-        
-        final filteredDocs = docs.where((doc) {
-          final items = doc['items'] as List<dynamic>;
-          return items.any((item) => item['type'] == widget.type);
-        }).toList();
-
-        if (filteredDocs.isEmpty) {
-          return const Center(child: Text('No hay pedidos pendientes'));
-        }
-
+        var mesas = mesaTotales.keys.toList()..sort();
         return ListView.builder(
-          padding: const EdgeInsets.all(8),
-          itemCount: filteredDocs.length,
-          itemBuilder: (context, index) {
-            final doc = filteredDocs[index];
-            // Usar una Key para optimizar el rendimiento del ListView
-            return _OrderCard(key: ValueKey(doc.id), doc: doc, type: widget.type);
-          },
+          itemCount: mesas.length,
+          itemBuilder: (context, i) => Card(
+            margin: const EdgeInsets.all(10),
+            child: ListTile(
+              title: Text(
+                "MESA ${mesas[i]}",
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22,
+                ),
+              ),
+              subtitle: Text(
+                "Total: ${mesaTotales[mesas[i]]!.toStringAsFixed(2)}€",
+                style: const TextStyle(fontSize: 18, color: Colors.red),
+              ),
+              trailing: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  var batch = FirebaseFirestore.instance.batch();
+                  var query = await FirebaseFirestore.instance
+                      .collection('orders')
+                      .where('mesa', isEqualTo: mesas[i])
+                      .get();
+                  for (var d in query.docs) {
+                    batch.delete(d.reference);
+                  }
+                  await batch.commit();
+                },
+                child: const Text("PAGADO"),
+              ),
+            ),
+          ),
         );
       },
-    );
-  }
-}
-
-class _OrderCard extends StatefulWidget {
-  final QueryDocumentSnapshot doc;
-  final String type;
-
-  const _OrderCard({super.key, required this.doc, required this.type});
-
-  @override
-  __OrderCardState createState() => __OrderCardState();
-}
-
-class __OrderCardState extends State<_OrderCard> {
-  Timer? _timer;
-  Duration? _timeElapsed;
-
-  @override
-  void initState() {
-    super.initState();
-    final timestamp = widget.doc['timestamp'] as Timestamp?;
-    if (timestamp != null) {
-      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (mounted) {
-          setState(() {
-            _timeElapsed = DateTime.now().difference(timestamp.toDate());
-          });
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = (widget.doc['items'] as List<dynamic>)
-        .where((item) => item['type'] == widget.type)
-        .toList();
-    
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    final timestamp = widget.doc['timestamp'] as Timestamp?;
-    final timeFormatted = timestamp != null ? DateFormat.Hms().format(timestamp.toDate()) : '--:--';
-    
-    bool isLate = _timeElapsed != null && _timeElapsed!.inMinutes >= 10;
-
-    return Card(
-      elevation: 6,
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-      color: isLate ? Colors.red.shade100 : Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: isLate ? BorderSide(color: Colors.red.shade700, width: 2) : BorderSide.none,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                 Text(
-                  'Pedido: $timeFormatted',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                if (_timeElapsed != null)
-                  Text(
-                    '${_timeElapsed!.inMinutes.toString().padLeft(2, '0')}:${(_timeElapsed!.inSeconds % 60).toString().padLeft(2, '0')}',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isLate ? Colors.red.shade900: Colors.black87),
-                  )
-              ],
-            ),
-            const Divider(thickness: 1.5),
-            ...items.map((item) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4.0),
-              child: Text(
-                '${item['quantity']}x ${item['name']}',
-                style: const TextStyle(fontSize: 18),
-              ),
-            )),
-            const SizedBox(height: 12),
-            Center(
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('Completar Pedido'),
-                onPressed: () => widget.doc.reference.update({'status': 'completed'}),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
