@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "585931466300",
+    "project_id": "barcomandas-608f3",
+    "storage_bucket": "barcomandas-608f3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:585931466300:android:41b51fd54d3ce3750a0539",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC63qNyW5PNDzyp3c-n1qgYAz43y2bXXzg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
